@@ -1,0 +1,159 @@
+from selenium import webdriver
+from selenium.webdriver.common.by import By
+from selenium.webdriver.chrome.service import Service
+from selenium.webdriver.support.ui import WebDriverWait
+from selenium.webdriver.support import expected_conditions as EC
+from selenium.webdriver.common.keys import Keys
+from webdriver_manager.chrome import ChromeDriverManager
+import openpyxl  # Excel support
+
+class WebScraper:
+    def __init__(self, platform_name):
+        self.platform_name = platform_name
+        self.driver = self.initialize_driver()
+
+    def initialize_driver(self):
+        """
+        Initializes the Selenium WebDriver.
+        """
+        options = webdriver.ChromeOptions()
+        options.add_argument("--start-maximized")
+        driver = webdriver.Chrome(service=Service(ChromeDriverManager().install()), options=options)
+        return driver
+
+    def search_product(self, url, search_box_xpath, product_name):
+        """
+        Searches for a product on the given platform.
+
+        Args:
+            url: URL of the platform.
+            search_box_xpath: XPath for the search input box.
+            product_name: Name of the product to search.
+
+        Returns:
+            bool: True if search is successful, False otherwise.
+        """
+        try:
+            self.driver.get(url)
+            search_box = WebDriverWait(self.driver, 10).until(
+                EC.presence_of_element_located((By.XPATH, search_box_xpath))
+            )
+            search_box.send_keys(product_name)
+            search_box.send_keys(Keys.ENTER)
+            return True
+        except Exception as e:
+            print(f"Error during search on {self.platform_name}: {e}")
+            return False
+
+    def fetch_product_data(self, product_container_xpath, title_xpath, price_xpath):
+        """
+        Fetches product titles and prices from the search results.
+
+        Args:
+            product_container_xpath: XPath for the product container.
+            title_xpath: XPath for the product title.
+            price_xpath: XPath for the product price.
+
+        Returns:
+            list: A list of product data with title and price.
+        """
+        product_data = []
+        try:
+            products = WebDriverWait(self.driver, 10).until(
+                EC.presence_of_all_elements_located((By.XPATH, product_container_xpath))
+            )
+            for product in products:
+                try:
+                    title = product.find_element(By.XPATH, title_xpath).text
+                except:
+                    title = "N/A"
+                try:
+                    price = product.find_element(By.XPATH, price_xpath).text
+                except:
+                    price = "N/A"
+                product_data.append([title, price])
+        except Exception as e:
+            print(f"Error fetching product data on {self.platform_name}: {e}")
+        return product_data
+
+    def save_to_excel(self, data, filename="products.xlsx"):
+        """
+        Saves product data to an Excel file.
+
+        Args:
+            data: List of product data (title, price).
+            filename: Name of the Excel file.
+        """
+        try:
+            # Create or open the workbook
+            workbook = openpyxl.Workbook()
+            sheet = workbook.active
+            sheet.title = self.platform_name
+
+            # Add headers
+            sheet.append(["Title", "Price"])
+
+            # Add product data
+            for row in data:
+                sheet.append(row)
+
+            # Save the workbook
+            workbook.save(filename)
+            print(f"Data successfully saved to {filename}")
+        except Exception as e:
+            print(f"Error saving to Excel: {e}")
+
+    def quit_driver(self):
+        """
+        Closes the Selenium WebDriver.
+        """
+        self.driver.quit()
+
+
+def main():
+    """
+    Main function to execute the scraping workflow.
+    """
+    product_name = input("Enter the product name to search: ")
+
+    # AliExpress scraper
+    ali_scraper = WebScraper("AliExpress")
+    try:
+        if ali_scraper.search_product(
+            url="https://www.aliexpress.com/",
+            search_box_xpath='//*[@id="search-words"]',
+            product_name=product_name,
+        ):
+            ali_product_data = ali_scraper.fetch_product_data(
+                product_container_xpath='//*[@id="card-list"]/div',
+                title_xpath='.//div[2]/div[1]/h3',
+                price_xpath='.//div[2]/div[3]/div[1]',
+            )
+            ali_scraper.save_to_excel(ali_product_data, filename="aliexpress_products.xlsx")
+        else:
+            print("AliExpress search failed.")
+    finally:
+        ali_scraper.quit_driver()
+
+    # Amazon scraper
+    amazon_scraper = WebScraper("Amazon")
+    try:
+        if amazon_scraper.search_product(
+            url="https://www.amazon.com/",
+            search_box_xpath='//*[@id="twotabsearchtextbox"]',
+            product_name=product_name,
+        ):
+            amazon_product_data = amazon_scraper.fetch_product_data(
+                product_container_xpath='//div[contains(@class, "s-main-slot")]/div',
+                title_xpath='.//h2/a/span',
+                price_xpath='.//span[@class="a-price"]/span[2]',
+            )
+            amazon_scraper.save_to_excel(amazon_product_data, filename="amazon_products.xlsx")
+        else:
+            print("Amazon search failed.")
+    finally:
+        amazon_scraper.quit_driver()
+
+
+if __name__ == "__main__":
+    main()
